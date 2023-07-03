@@ -1,21 +1,41 @@
 body {
   margin: 0;
   background-color:#6989ba;
+}
+
+h1, h2 {
   font-family: "MedievalSharp", sans-serif;
+}
+
+.feature-marker {
+  position : absolute;
 }
 
 .dropdown {
   position: relative;
   display: inline-block;
-}
-.dropdown:hover .dropdown-content { 
-  display:block; 
-}
-.dropdown:focus .dropdown-content { 
-  display:block; 
+  direction: rtl;
 }
 .dropdown-content {
   display: none;
   position: absolute;
   z-index: 1;
+  background-color: #f9f9f9;
+  border-radius: 5px;
+  min-width: 160px;
+  direction: ltr;
+}
+
+.dropdown-content a {
+  color: black;
+  padding: 12px 16px;
+  text-decoration: none;
+  display: block;
+}
+
+.dropdown:hover .dropdown-content { 
+  display:block; 
+}
+.dropdown:focus .dropdown-content { 
+  display:block; 
 }
