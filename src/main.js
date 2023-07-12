@@ -35,7 +35,7 @@ class App extends Component {
       tData: {},
       realm: 1,
       startAt: 1,
-      testnet: true,
+      testnet: false,
       jsonQueue: [],
       txQueue: [],
       payload: []
@@ -54,6 +54,14 @@ class App extends Component {
       this.showDialog("isNew")
     }
     this.save("lastLoad", Date.now())
+
+    //find out if searching for a particular realm 
+    const url = new URL(window.location.href);
+    const params = url.searchParams;
+    if (params.get("token_id")) {
+      let _id = params.get("token_id").slice(-8)
+      this.setRealm(_id)
+    }
   }
 
   // Lifecycle: Called just before our component will be destroyed
@@ -139,13 +147,15 @@ class App extends Component {
     return html`
       <div>
         <div class="relative flex items-center justify-between pa2 z-2">
-          <h1>Project 777</h1>
+          <h1><a class="link underline-hover black" href=".">Project 777</a></h1>
           <div class="flex items-center">
             ${txQueue.length > 0 ? Views.txQueue(this) : ""}
-            <a class="f6 link dim ba bw1 pa1 dib black" href="#0" onClick=${()=>this.setNetwork()}>${sortAdr}</a>
+            <a class="f6 link dim ba bw1 pa1 dib black" href="https://www.stargaze.zone/launchpad/stars1avmaqtmxw9g43mgpxzuhv074gmzm5wharxrvlsfp4ze7246gyqdqtr9a0l">Get A Realm</a>
+            <a class="f6 link dim ba bw1 ml2 pa1 dib black" href="#0" onClick=${()=>this.setNetwork()}>${sortAdr}</a>
             <div class="dropdown ml2">
               <a class="f6 link dim ba bw1 pa1 dib black" href="#0"><img src="md-menu.svg" width="20" height="20"></img></a>
               <div class="dropdown-content">
+                <a href=".">Home</a>
                 <a href="#" onClick=${()=>this.setState({
       view: "allRealms"
     })}>View Realms</a>
@@ -175,7 +185,7 @@ const Views = {
   dialog(app) {
     let {showDialog} = app.state
 
-    return showDialog == "" ? "" : html`<div class="absolute ma6 pa2 o-80 bg-washed-blue br3 shadow-5">${Views[showDialog](app)}</div>`
+    return showDialog == "" ? "" : html`<div class="absolute ma6 pa2 o-80 bg-washed-blue br3 shadow-5 z-2">${Views[showDialog](app)}</div>`
   },
   txQueue(app) {
     let queue = app.state.txQueue
@@ -292,7 +302,7 @@ const Views = {
 
     return html`
       <div class="w-90 mv5 ph2">
-        <h2 onClick=${()=>this.setState({
+        <h2 onClick=${()=>app.setState({
       view: "realm"
     })}>${R.name} ${tokens.includes(realm) ? " [Owned]" : ""}</h2>
         <div class="flex">
@@ -321,7 +331,11 @@ const Views = {
   myRealms(app) {
     const {tokens, tData} = app.state
     if (tokens.length == 0)
-      return
+      return html`
+        <div class="ma3">
+          <a class="tc f6 link dim dib pv2 br2 white bg-dark-green w-100" href="https://www.stargaze.zone/launchpad/stars1avmaqtmxw9g43mgpxzuhv074gmzm5wharxrvlsfp4ze7246gyqdqtr9a0l">Get a Realm on Stargaze</a>
+        </div>
+      `
 
     return html`
       <div>
@@ -343,13 +357,6 @@ const Views = {
     return html`
       <div class="w-90 mv5 ph2">
         ${this.myRealms(app)}
-        <h2>All Realms</h2>
-        <form>
-          
-        </form>
-        <div class="flex">
-          ${ids.map(id=>tData[id] ? this.smallRealm(app, id) : app.loadToken(id))}
-        </div>
       </div>
     `
   },
@@ -376,6 +383,9 @@ const Views = {
       <p class="tc">The goal of this project is to create the most interesting fantasy world that you can. 
       There is no PvP, focus on creative world building. 
       </p>
+      <div class="mh6">
+        <a class="tc f6 link dim dib pv2 br2 white bg-dark-green w-100" href="https://www.stargaze.zone/launchpad/stars1avmaqtmxw9g43mgpxzuhv074gmzm5wharxrvlsfp4ze7246gyqdqtr9a0l">Get a Realm on Stargaze</a>
+      </div>
     </div>
     `
   }

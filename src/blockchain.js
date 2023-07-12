@@ -116,7 +116,7 @@ const sendTx = (data) => {
 */
 
 const getTokensByAddress = async (address,isMain=true)=>{
-  const main = ""
+  const main = "stars19vgvlu5jw4ne2aang6fnwg8ul8wlqcdmht3h2m87rtqel3ztgxcqsh0aa3"
   const test = "stars1gdf8ud465e9khy590fmtxcywxcydwzec5ecf84gc7vcgytphla3qlntuhc"
 
   const query = {
@@ -131,8 +131,8 @@ const getTokensByAddress = async (address,isMain=true)=>{
 //testnet / mainnet 
 const NFT = {
   count : [3,777],
-  img : ["https://bafybeiatxfo52ynuvrsezfztphdqfj3bnnjrxxf75jzbeija5cmyux64im.ipfs.nftstorage.link/"],
-  json : ["https://bafybeid2k2e5qn3rydmaa4af3n5iqbtfm4iosfe35hddcvviw5sujsrl2m.ipfs.nftstorage.link/"]
+  img : ["https://bafybeiatxfo52ynuvrsezfztphdqfj3bnnjrxxf75jzbeija5cmyux64im.ipfs.nftstorage.link/","https://nftstorage.link/ipfs/bafybeiec7wvovufcr5ul4edrghgjvlwmra52t7km5cex356pitddqnsvzy/"],
+  json : ["https://bafybeid2k2e5qn3rydmaa4af3n5iqbtfm4iosfe35hddcvviw5sujsrl2m.ipfs.nftstorage.link/","https://nftstorage.link/ipfs/bafybeidi5sdbptoo7ltq3zxqg3rkqzyqzful6rzsmnfmlw7mpm43y6kw34/"]
 }
 
 const getJSON = function(url) {
