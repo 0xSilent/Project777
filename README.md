@@ -14,3 +14,14 @@ The goal of this project is to create the most interesting fantasy world that yo
 * All maps were generated using modified code from [Azgaar's Fantasy Map Generator](https://github.com/Azgaar/Fantasy-Map-Generator).
 * Concept and json data created by 0xSilent
 * The page was developed by 0xPaladin
+
+### Royalties
+Stargaze royalties will be adjusted based upon marketplace floor price.
+
+| Floor ($)      | Royalties |
+| ----------- | ----------- |
+| <10      | 20%       |
+| 10+      | 17%       |
+| 16+      | 15%       |
+| 20+      | 10%       |
+| 50+      | 5%       |
