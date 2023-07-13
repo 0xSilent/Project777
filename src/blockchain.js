@@ -140,6 +140,7 @@ const getJSON = function(url) {
     var xhr = new XMLHttpRequest();
     xhr.open('get', url, true);
     xhr.responseType = 'json';
+    //xhr.addEventListener("error", console.log);
     xhr.onload = function() {
       var status = xhr.status;
       if (status == 200) {
@@ -188,14 +189,7 @@ const connect = async (app,isMain = true) => {
   app.setState({tokens:tokens.tokens})
 
   const tData = app.state.tData
-  tokens.tokens.forEach(async id => {
-    //check if data exists
-    if(!Object.keys(tData).includes(id)) {
-      //if data doesn't exist pull it 
-      tData[id] = await tokenData(id,isMain)
-      app.setState({tData})
-    }
-  })
+  tokens.tokens.forEach(async id => app.loadToken(id))
 }
 
 export {tokenData, sendTx, connect}

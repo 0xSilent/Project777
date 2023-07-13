@@ -8,7 +8,7 @@ h1, h2 {
 }
 
 .feature-marker {
-  position : absolute;
+  transform: rotate(90deg);
 }
 
 .dropdown {

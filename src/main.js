@@ -27,8 +27,7 @@ const html = htm.bind(h);
 /*
   Declare the main App 
 */
-
-import {setActions} from './actions.js';
+import {RealmState, RealmUI, MyRealms} from "./realms.js"
 
 class App extends Component {
   constructor() {
@@ -40,21 +39,19 @@ class App extends Component {
       tokens: [],
       tData: {},
       realm: 1,
-      startAt: 1,
       viewRealm: 1,
       testnet: false,
       jsonQueue: [],
       txQueue: [],
       payload: []
     };
+
+    //use in other views 
+    this.html = html
   }
 
   // Lifecycle: Called whenever our component is created
   async componentDidMount() {
-    this.setState({
-      realm: await this.loadToken(1)
-    })
-
     //check if freash load - display about
     let lastLoad = localStorage.getItem("lastLoad")
     if (lastLoad === null) {
@@ -108,10 +105,6 @@ class App extends Component {
       view: "main"
     })
 
-    this.setState({
-      realm: await this.loadToken(1)
-    })
-
     connect(this, isMain)
   }
 
@@ -138,6 +131,9 @@ class App extends Component {
 
       //if data doesn't exist pull it 
       tData[id] = await tokenData(id, !testnet)
+      //get state data 
+      await RealmState(tData[id])
+      
       this.setState({
         tData
       })
@@ -147,6 +143,8 @@ class App extends Component {
       this.setState({
         jsonQueue
       })
+
+      //pull 
     }
     return tData[id]
   }
@@ -163,8 +161,19 @@ class App extends Component {
   }
 
   //main page render 
-  render(props, {account, view, txQueue, showDialog, testnet, viewRealm}) {
+  render(props, {account, view, tokens, txQueue, showDialog, testnet, viewRealm}) {
     const sortAdr = account.length > 0 ? account.slice(0, 5) + "..." + account.slice(-4) : "Connect"
+
+    //get view as array 
+    let _view = view.split(".")[0]
+
+    //view a list of owned tokens
+    const myTokens = () => {
+      return html`
+      <span>
+        <span class="ml2 b">My Realms:</span> ${tokens.map(id=> html`<a class="white mh1" href="#" onClick=${()=>this.setRealm(id)}>${id}</a>`)}
+      </span>`
+    }
 
     return html`
       <div>
@@ -174,29 +183,25 @@ class App extends Component {
             <div>
               <span class="b">View #</span>
               <input class="tc" type="number" min="1" max=${testnet ? 3 : 777} value=${viewRealm} onInput=${(e)=>viewRealm = Number(e.target.value)}></input>
-              <a class="f6 link dim br2 br--right bw1 pa1 dib white bg-dark-green" href="#0" onClick=${()=>this.setRealm(viewRealm)}>View</a>
+              <a class="f6 link dim br2 br--right bw1 pa1 dib white bg-dark-green" href="#" onClick=${()=>this.setRealm(viewRealm)}>View</a>
+              ${tokens.length > 0 ? myTokens() : ""}
             </div>
           </div>
           <div class="flex items-center">
             ${txQueue.length > 0 ? Views.txQueue(this) : ""}
-            <a class="f6 link dim ba bw1 pa1 dib black" href="https://www.stargaze.zone/launchpad/stars1avmaqtmxw9g43mgpxzuhv074gmzm5wharxrvlsfp4ze7246gyqdqtr9a0l">Get A Realm</a>
-            <a class="f6 link dim ba bw1 ml2 pa1 dib black" href="#0" onClick=${()=>this.setNetwork()}>${sortAdr}</a>
+            <a class="f5 link dim ba bw1 pa1 dib black" href="https://www.stargaze.zone/launchpad/stars1avmaqtmxw9g43mgpxzuhv074gmzm5wharxrvlsfp4ze7246gyqdqtr9a0l">Get A Realm</a>
             <div class="dropdown ml2">
-              <a class="f6 link dim ba bw1 pa1 dib black" href="#0"><img src="md-menu.svg" width="20" height="20"></img></a>
+              <a class="f5 link dim ba bw1 pa1 dib black" href="#" onClick=${()=>this.setNetwork()}>${sortAdr}</a>
               <div class="dropdown-content">
-                <a href=".">Home</a>
-                <a href="#" onClick=${()=>this.setState({
-      view: "allRealms"
-    })}>View Realms</a>
-                <a href="#" onClick=${()=>this.showDialog("isNew")}>About</a>
-                <a href="#" onClick=${()=>this.setNetwork(false)}>Testnet</a>                
+                <a href="#" onClick=${()=>this.setNetwork(false)}>Testnet</a>
               </div>
             </div>
+            <a class="ml2 f5 link dim ba bw1 pa1 dib black" href="#" onClick=${()=>this.showDialog("isNew")}>About</a>
           </div>
         </div>
         <div class="flex justify-center w-100 z-0">
           ${Views.dialog(this)}
-          ${Views[view](this)}
+          ${Views[_view](this)}
         </div>
       </div>
       `
@@ -208,7 +213,7 @@ const Views = {
   main(app) {
     return html`
       <div>
-        <img src=${app.state.realm.image} alt="Example Map" width="1000" height="1000"></img>
+        <img src="https://nftstorage.link/ipfs/bafybeiec7wvovufcr5ul4edrghgjvlwmra52t7km5cex356pitddqnsvzy/1.jpeg" alt="Example Map" width="1000" height="1000"></img>
       </div>`
   },
   dialog(app) {
@@ -247,28 +252,6 @@ const Views = {
     `
   },
   actions(app) {
-    let {tokens, realm, tData, payload} = app.state
-    const R = tData[realm]
-    //get available actions 
-    const act = setActions(realm, R, app.state)
-
-    //change action changes payload 
-    const changeAction = (_a)=>{
-      let _act = act[_a]
-      let _p = _act.data.map(d=>d[3])
-      payload = [_a, _act.cost(_p), _p]
-    }
-    //update payload with data information 
-    const updatePayload = (e,i)=>{
-      let _act = act[payload[0]]
-      payload[2][i] = _act.data[i][4] == "number" ? Number(e.target.value) : e.target.value
-      payload[1] = _act.cost(payload[2])
-
-      app.setState({
-        payload: payload.slice()
-      })
-      console.log(app.state.payload)
-    }
     //push to tx queue 
     const txQueue = ()=>{
       let data = {
@@ -286,108 +269,12 @@ const Views = {
       })
     }
 
-    //make an input based upon the data type 
-    const makeDiv = {
-      select(d, i) {
-        return html`
-        <select class="mv1" value=${payload[2][i]} onChange=${(e)=>updatePayload(e, i)}>
-          ${d[2].map((val,j)=>html`<option value=${j}>${val}</option>`)}
-        </select>
-        `
-      },
-      minmax(d, i) {
-        return html`<input type="number" min=${d[2][0]} max=${d[2][1]} value=${payload[2][i]} onInput=${(e)=>updatePayload(e, i)}></input>`
-      }
-    }
-
-    //set action if none current 
-    if (payload.length == 0) {
-      changeAction(Object.keys(act)[0])
-    }
-    let _act = act[payload[0]]
-
-    return html`
-    <div class="pa1 ba w-100">
-      <h3 class="ma0">Take an Action</h3>
-      <select class="mv1 w-100" value=${payload[0]} onChange=${(e)=>changeAction(e.target.value)}>
-        ${Object.entries(act).map(([key,action])=>html`<option value=${key}>${action.name}</option>`)}
-      </select>
-      <div>${_act.about}</div>
-      <div class="flex flex-inline items-center justify-around">
-        ${_act.data.map((d,i)=>html`<div class="ma1"><span class="b">${d[0]}</span> ${makeDiv[d[1]](d, i)}</div>`)}
-      </div>
-      <a class="db link dim br2 pointer pa1 bg-dark-green white tc w-100" onClick=${()=>txQueue()}>Queue (Cost: ${app.state.payload[1]} stars)</a>
-    </div>
-    `
-  },
-  featureMarker(app) {
-    return html`<div class="feature-marker">➤</div>`
   },
   realm(app) {
-    const {tokens, realm, tData} = app.state
-    const R = tData[realm]
-
-    const adiv = (id)=>html`<div class="ma1 pa1 ba" style="width: 175px;">${id}: ${R.attributes[id.toLowerCase()]}</div>`
-
-    return html`
-      <div class="mh3 ph2">
-        <h2 onClick=${()=>app.setState({
-      view: "realm"
-    })}>${R.name} ${tokens.includes(realm) ? " [Owned]" : ""}</h2>
-        <div class="flex">
-          <div class="pa2">
-            <div class="flex flex-wrap f4">${["Order", "Heightmap", "Seed", "Latitude", "Temperature", "Precipitation", "People", "Features", "Ruins"].map(adiv)}</div>
-          </div>
-          <div style="min-width: 800px;min-height: 800px;"> 
-            <div class="absolute">
-              <img id="map" src=${R.image} width="800" height="800"></img>
-            </div>
-          </div>
-        </div>
-      </div>
-    `
-  },
-  smallRealm(app, id) {
-    let {name, image} = app.state.tData[id]
-
-    return html`
-    <div class="link ma1 pa2 dim ba bw1 dib black" onClick=${()=>app.setRealm(id)}>
-      <div class="tc">${name}</div>
-      <img src=${image} width="100" height="100"></img>
-    </div>
-    `
+    return RealmUI(app)
   },
   myRealms(app) {
-    const {tokens, tData} = app.state
-    if (tokens.length == 0)
-      return html`
-        <div class="ma3">
-          <a class="tc f6 link dim dib pv2 br2 white bg-dark-green w-100" href="https://www.stargaze.zone/launchpad/stars1avmaqtmxw9g43mgpxzuhv074gmzm5wharxrvlsfp4ze7246gyqdqtr9a0l">Get a Realm on Stargaze</a>
-        </div>
-      `
-
-    return html`
-      <div>
-        <h2>My Realms</h2>
-        <div class="flex">
-          ${tokens.map(id=>this.smallRealm(app, id))}
-        </div>
-      </div>
-    `
-  },
-  allRealms(app) {
-    const count = [3, 777]
-    const {startAt, tData, testnet} = app.state
-    const max = count[testnet ? 0 : 1]
-    const ids = Array.from({
-      length: startAt + 9 > max ? max : 10
-    }, (v,i)=>startAt + i);
-
-    return html`
-      <div class="w-90 mv5 ph2">
-        ${this.myRealms(app)}
-      </div>
-    `
+    return MyRealms(app)
   },
   isNew(app) {
     return html`
