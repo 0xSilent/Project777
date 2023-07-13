@@ -1,4 +1,10 @@
 /*
+  Storage
+*/
+//localforage
+import "../lib/localforage.min.js"
+
+/*
   Blockchain
 */
 import {tokenData, sendTx, connect} from './blockchain.js';
@@ -35,6 +41,7 @@ class App extends Component {
       tData: {},
       realm: 1,
       startAt: 1,
+      viewRealm: 1,
       testnet: false,
       jsonQueue: [],
       txQueue: [],
@@ -71,15 +78,28 @@ class App extends Component {
   async save(key, what, where="browser") {
     if (where == "browser") {
       localStorage.setItem(key, what)
+    } else if (where == "storage") {
+      DB.setItem(key, what)
     }
   }
 
+  //load local state 
+  async load(key, where="browser") {
+    if (where == "browser") {
+      return localStorage.getItem(key)
+    } else if (where == "storage") {
+      return await DB.getItem(key)
+    }
+  }
+
+  //show the dialog calling which dialog to show 
   showDialog(what) {
     this.setState({
       showDialog: what
     })
   }
 
+  //set Stargaze network 
   async setNetwork(isMain=true) {
     this.setState({
       testnet: !isMain,
@@ -106,14 +126,15 @@ class App extends Component {
     //sendTx()
   }
 
+  //load a token 
   async loadToken(id) {
     let {tData, testnet, jsonQueue} = this.state
 
     //check if data exists
     if (!Object.keys(tData).includes(id) || tData[id] === undefined) {
-      if (jsonQueue.includes(id))
-        return
-      this.state.jsonQueue.push(id)
+      if (!jsonQueue.includes(id)) {
+        this.state.jsonQueue.push(id)
+      }
 
       //if data doesn't exist pull it 
       tData[id] = await tokenData(id, !testnet)
@@ -141,13 +162,21 @@ class App extends Component {
     console.log(this.state.tData[id])
   }
 
-  render(props, {account, view, txQueue, showDialog}) {
+  //main page render 
+  render(props, {account, view, txQueue, showDialog, testnet, viewRealm}) {
     const sortAdr = account.length > 0 ? account.slice(0, 5) + "..." + account.slice(-4) : "Connect"
 
     return html`
       <div>
-        <div class="relative flex items-center justify-between pa2 z-2">
-          <h1><a class="link underline-hover black" href=".">Project 777</a></h1>
+        <div class="relative flex items-center justify-between ph3 z-2">
+          <div>
+            <h1 class="mv2"><a class="link underline-hover black" href=".">Project 777</a></h1>
+            <div>
+              <span class="b">View #</span>
+              <input class="tc" type="number" min="1" max=${testnet ? 3 : 777} value=${viewRealm} onInput=${(e)=>viewRealm = Number(e.target.value)}></input>
+              <a class="f6 link dim br2 br--right bw1 pa1 dib white bg-dark-green" href="#0" onClick=${()=>this.setRealm(viewRealm)}>View</a>
+            </div>
+          </div>
           <div class="flex items-center">
             ${txQueue.length > 0 ? Views.txQueue(this) : ""}
             <a class="f6 link dim ba bw1 pa1 dib black" href="https://www.stargaze.zone/launchpad/stars1avmaqtmxw9g43mgpxzuhv074gmzm5wharxrvlsfp4ze7246gyqdqtr9a0l">Get A Realm</a>
@@ -165,7 +194,7 @@ class App extends Component {
             </div>
           </div>
         </div>
-        <div class="flex justify-center absolute top-0 w-100 z-0">
+        <div class="flex justify-center w-100 z-0">
           ${Views.dialog(this)}
           ${Views[view](this)}
         </div>
@@ -301,7 +330,7 @@ const Views = {
     const adiv = (id)=>html`<div class="ma1 pa1 ba" style="width: 175px;">${id}: ${R.attributes[id.toLowerCase()]}</div>`
 
     return html`
-      <div class="w-90 mv5 ph2">
+      <div class="mh3 ph2">
         <h2 onClick=${()=>app.setState({
       view: "realm"
     })}>${R.name} ${tokens.includes(realm) ? " [Owned]" : ""}</h2>
