@@ -1,4 +1,8 @@
 /*
+  V0.3
+*/
+
+/*
   Storage
 */
 //localforage
@@ -7,7 +11,7 @@ import "../lib/localforage.min.js"
 /*
   Blockchain
 */
-import {tokenData, sendTx, connect} from './blockchain.js';
+import {tokenData, submitChangeQueue, connect} from './blockchain.js';
 
 /*
   UI Resources  
@@ -27,7 +31,191 @@ const html = htm.bind(h);
 /*
   Declare the main App 
 */
-import {RealmState, RealmUI, MyRealms} from "./realms.js"
+import {RealmState, RealmUI} from "./realms.js"
+
+const Views = {
+  main(app) {
+    return html`
+        <div>
+          <img src="https://nftstorage.link/ipfs/bafybeiec7wvovufcr5ul4edrghgjvlwmra52t7km5cex356pitddqnsvzy/1.jpeg" alt="Example Map" width="1000" height="1000"></img>
+        </div>`
+  },
+  dialog(app) {
+    let {showDialog} = app.state
+
+    return showDialog == "" ? "" : html`<div class="absolute ma6 pa2 o-80 bg-washed-blue br3 shadow-5 z-2">${this[showDialog](app)}</div>`
+  },
+  txQueue(app) {
+    let queue = app.state.txQueue
+
+    const rmQueue = (i)=>{
+      queue.splice(i, 1)
+      app.setState({
+        txQueue: queue.slice()
+      })
+    }
+
+    //get total cost - simplified to number of changes being made 
+    const cost = queue.length
+
+    return html`
+        <div class="dropdown mh2">
+          <a class="f6 link dim ba bw1 pa1 dib black" href="#0" onClick=${()=>app.submitQueue()}>Queue [${queue.length} : ${cost} <img src="../stars.png" width="12" height="12"></img>]</a>
+          <div class="dropdown-content">
+            <div class="dim pa2 pointer" onClick=${()=>app.submitQueue()}>Submit</div>
+            ${queue.map((q,i)=>{
+      return html`
+              <div class="flex flex-inline items-center justify-between dim pa2 pointer" style="width: 275px;" onClick=${()=>rmQueue(i)}>
+                <div>${q.name} - ${q.what}</div>
+                <div>✘</div>
+              </div>`
+    }
+    )}
+          </div>
+        </div>
+        `
+  },
+  realm(app) {
+    //main realm display 
+    return RealmUI(app)
+  },
+  realmFeature(app, {vid, format, short, shortOwned}) {
+    //sub display for features/ruins/peoples 
+    //get state and realm 
+    const {tokens, realm, tData, view, qBlock} = app.state
+    const R = tData[realm]
+    //vid 
+    const _vid = "realm." + vid + "."
+    //create array for loop 
+    const ids = Array.from({
+      length: R.attributes[vid]
+    }, (v,i)=>i);
+    //determine view and look for feature id 
+    const _view = view.split(".")
+
+    //base encapsulating div for feature 
+    const baseDiv = (sub)=>{
+      return html`<div class="ma1 pa1 ph3 ba">${sub}</div>`
+    }
+
+    //show individual feature/ruins/people   
+    let individual = (id)=>{
+      //display edit if owned and selected   
+      if (tokens.includes(R.id)) {
+        //current feature
+        const {what, delta} = R.deltas(R, qBlock, vid, id)
+
+        //show owned data 
+        const sub = html`
+      <div class="flex justify-between items-center">
+        <div class="b">#${id + 1}</div>
+        <div>${shortOwned(what, delta.length != 0)}</div>
+        <div class="dim pa1 ba b--green pointer" onClick=${()=>app.setView(_vid + id)}>Edit</div>
+      </div>`
+
+        return id.toString() == _view[2] ? this.editFeature(app, R, vid, id, format) : baseDiv(sub)
+      } else {
+        //state only 
+        const what = R.state[vid][id]
+        //if undefinded vs data 
+        return baseDiv(html`<div class="flex justify-between items-center"><div class="f4 b">#${id + 1}</div> ${!what ? `NOT SET` : short(what)}</div>`)
+      }
+    }
+
+    return html`<div class="mh2">${ids.map(individual)}</div>`
+  },
+  editFeature(app, R, _what, id, format) {
+    //universal editor for features/ruins/peoples 
+    const _vid = ["realm",_what,id].join(".")
+    const local = R[_what][id] || {}
+    const {what, delta} = R.deltas(R, app.state.qBlock, _what, id)
+    
+    //update payload with data information 
+    const update = (e,key)=>{
+      //update feature 
+      local[key] = format[key].input[4] == "number" ? Number(e.target.value) : e.target.value
+      R[_what][id] = local
+      //save 
+      R.save()
+      app.setView(_vid)
+    }
+
+    //check if in queue 
+    const uid = [R.id,_what.charAt(0).toLowerCase(),id]
+    const inQueue = app.state.txQueue.map(q=>q.payload.slice(0, 3).join(".")).indexOf(uid.join("."))
+    //submit to queue 
+    const submitDeltas = ()=>{
+      let q = {
+        name: R.name,
+        what: _what + " " + (id + 1),
+        cost: delta.length,
+        payload: [...uid, ...delta]
+      }
+      const push = ()=>{
+        inQueue == -1 ? app.state.txQueue.push(q) : app.state.txQueue[inQueue] = q
+        app.setView(_vid)
+      }
+      return html`<div class="b tc white dim mb1 pa1 br2 bg-green pointer" onClick=${push}>Submit Changes</div>`
+    }
+
+    //make an input based upon the data type 
+    const makeDiv = {
+      select(key, d) {
+        return html`
+        <select class="mv1" value=${what[key].val} onChange=${(e)=>update(e, key)}>
+          ${d[2].map((val,j)=>html`<option value=${j}>${val}</option>`)}
+        </select>
+        `
+      },
+      minmax(key, d) {
+        return html`<input type="number" min=${d[2][0]} max=${d[2][1]} value=${what[key].val} onInput=${(e)=>update(e, key)}></input>`
+      }
+    }
+
+    //provide a form to input data 
+    return html`
+  <div class="ba ma1 ph2">
+    <h3 class="ma0">#${id + 1}</h3>
+    <div class="flex flex-wrap items-center justify-around">
+      ${Object.entries(format).map(([key,val])=>html`
+        <div class="flex items-center ma1">
+          <span class="b mh1">${val.input[0]}</span>${makeDiv[val.input[1]](key, val.input)}
+          <div class="${what[key].color} br-100" style="width: 15px;height: 15px;"></div>
+        </div>`)}
+    </div>
+    <div>${delta.length > 0 ? submitDeltas() : ""}</div>
+  </div>`
+  },
+  isNew(app) {
+    return html`
+        <div>
+          <h2 class="ma0 i">Deep in the 'Verse...</h2>
+          <p class="i">A ringworld spins around a standard yellow-orange star. 
+          Not a titanic ringworld that encircles the whole star, but a more mundane one. 
+          It is comprised of 777 plates each 6000 km wide and long. It only has a dameter of 1.48 million kilometers, 
+          but it has an area equivalent to 55 Earths. 
+          </p>
+          <p class="i">It is maintained (ruled) by the Seven, a group of cosmically powered AIs, 
+          that initially seeded the ring with life so that they could play as gods. 
+          Unfortunately their first experiment didn't end well. The Cataclysm left most plates devoid of life, 
+          but the Seven have decided to try again. 
+          </p>
+          <p class="i">You are one of their proxies, given dominion over one (or a number) of plates. 
+          While the land is established, the rest is your canvas - you will shape its features, creatures, people and it's future. 
+          </p>
+          <div class="mh6">
+            <a class="tc f6 link dim dib pv2 br2 white bg-dark-green w-100" href="#0" onClick=${()=>app.showDialog("")}>Continue</a>
+          </div>
+          <p class="tc">The goal of this project is to create the most interesting fantasy world that you can. 
+          There is no PvP, focus on creative world building. 
+          </p>
+          <div class="mh6">
+            <a class="tc f6 link dim dib pv2 br2 white bg-dark-green w-100" href="https://www.stargaze.zone/launchpad/stars1avmaqtmxw9g43mgpxzuhv074gmzm5wharxrvlsfp4ze7246gyqdqtr9a0l">Get a Realm on Stargaze</a>
+          </div>
+        </div>
+        `
+  }
+}
 
 class App extends Component {
   constructor() {
@@ -43,11 +231,12 @@ class App extends Component {
       testnet: false,
       jsonQueue: [],
       txQueue: [],
-      payload: []
+      qBlock: []
     };
 
     //use in other views 
     this.html = html
+    this.views = Views
   }
 
   // Lifecycle: Called whenever our component is created
@@ -96,6 +285,12 @@ class App extends Component {
     })
   }
 
+  setView(view) {
+    this.setState({
+      view
+    })
+  }
+
   //set Stargaze network 
   async setNetwork(isMain=true) {
     this.setState({
@@ -112,11 +307,10 @@ class App extends Component {
   submitQueue() {
     let queue = this.state.txQueue
     //get total cost 
-    const cost = queue.reduce((sum,q)=>sum + q.cost, 0)
+    const cost = queue.length
     //get payload 
     const payload = queue.map(q=>q.payload)
-    console.log(cost, payload)
-    //sendTx()
+    submitChangeQueue(this, cost, payload)
   }
 
   //load a token 
@@ -133,7 +327,7 @@ class App extends Component {
       tData[id] = await tokenData(id, !testnet)
       //get state data 
       await RealmState(tData[id])
-      
+
       this.setState({
         tData
       })
@@ -168,10 +362,10 @@ class App extends Component {
     let _view = view.split(".")[0]
 
     //view a list of owned tokens
-    const myTokens = () => {
+    const myTokens = ()=>{
       return html`
       <span>
-        <span class="ml2 b">My Realms:</span> ${tokens.map(id=> html`<a class="white mh1" href="#" onClick=${()=>this.setRealm(id)}>${id}</a>`)}
+        <span class="ml2 b">My Realms:</span> ${tokens.map(id=>html`<a class="white mh1" href="#" onClick=${()=>this.setRealm(id)}>${id}</a>`)}
       </span>`
     }
 
@@ -200,110 +394,11 @@ class App extends Component {
           </div>
         </div>
         <div class="flex justify-center w-100 z-0">
-          ${Views.dialog(this)}
-          ${Views[_view](this)}
+          ${this.views.dialog(this)}
+          ${this.views[_view](this)}
         </div>
       </div>
       `
-  }
-}
-
-//testnet / mainnet 
-const Views = {
-  main(app) {
-    return html`
-      <div>
-        <img src="https://nftstorage.link/ipfs/bafybeiec7wvovufcr5ul4edrghgjvlwmra52t7km5cex356pitddqnsvzy/1.jpeg" alt="Example Map" width="1000" height="1000"></img>
-      </div>`
-  },
-  dialog(app) {
-    let {showDialog} = app.state
-
-    return showDialog == "" ? "" : html`<div class="absolute ma6 pa2 o-80 bg-washed-blue br3 shadow-5 z-2">${Views[showDialog](app)}</div>`
-  },
-  txQueue(app) {
-    let queue = app.state.txQueue
-
-    const rmQueue = (i)=>{
-      queue.splice(i, 1)
-      app.setState({
-        txQueue: queue.slice()
-      })
-    }
-
-    //get total cost 
-    const cost = queue.reduce((sum,q)=>sum + q.cost, 0)
-
-    return html`
-    <div class="dropdown mh2">
-      <a class="f6 link dim ba bw1 pa1 dib black" href="#0">Queue [${queue.length} : ${cost} stars]</a>
-      <div class="dropdown-content">
-        <div class="dim pa2 pointer">Submit</div>
-        ${queue.map((q,i)=>{
-      return html`
-          <div class="flex flex-inline items-center justify-between dim pa2 pointer" style="width: 275px;" onClick=${()=>rmQueue(i)}>
-            <div>${q.name} - ${q.what}</div>
-            <div>✘</div>
-          </div>`
-    }
-    )}
-      </div>
-    </div>
-    `
-  },
-  actions(app) {
-    //push to tx queue 
-    const txQueue = ()=>{
-      let data = {
-        name: R.name,
-        what: _act.name,
-        cost: app.state.payload[1],
-        payload: app.state.payload
-      }
-
-      app.state.txQueue.push(data)
-      //clear payload 
-      payload = []
-      app.setState({
-        payload: []
-      })
-    }
-
-  },
-  realm(app) {
-    return RealmUI(app)
-  },
-  myRealms(app) {
-    return MyRealms(app)
-  },
-  isNew(app) {
-    return html`
-    <div>
-      <h2 class="ma0 i">Deep in the 'Verse...</h2>
-      <p class="i">A ringworld spins around a standard yellow-orange star. 
-      Not a titanic ringworld that encircles the whole star, but a more mundane one. 
-      It is comprised of 777 plates each 6000 km wide and long. It only has a dameter of 1.48 million kilometers, 
-      but it has an area equivalent to 55 Earths. 
-      </p>
-      <p class="i">It is maintained (ruled) by the Seven, a group of cosmically powered AIs, 
-      that initially seeded the ring with life so that they could play as gods. 
-      Unfortunately their first experiment didn't end well. The Cataclysm left most plates devoid of life, 
-      but the Seven have decided to try again. 
-      </p>
-      <p class="i">You are one of their proxies, given dominion over one (or a number) of plates. 
-      While the land is established, the rest is your canvas - you will shape its features, creatures, people and it's future. 
-      </p>
-      <div class="mh6">
-        <a class="tc f6 link dim dib pv2 br2 white bg-dark-green w-100" href="#0" onClick=${()=>app.showDialog("")}>Continue</a>
-      </div>
-      <p class="tc">The goal of this project is to create the most interesting fantasy world that you can. 
-      There is no PvP, focus on creative world building. 
-      </p>
-      <div class="mh6">
-        <a class="tc f6 link dim dib pv2 br2 white bg-dark-green w-100" href="https://www.stargaze.zone/launchpad/stars1avmaqtmxw9g43mgpxzuhv074gmzm5wharxrvlsfp4ze7246gyqdqtr9a0l">Get a Realm on Stargaze</a>
-      </div>
-    </div>
-    `
   }
 }
 

@@ -40,38 +40,52 @@ const Blank = ()=>{
 const EditFeature = (app,id)=>{
   const html = app.html
   //get state and realm 
-  const {realm, tData, view} = app.state
+  const {realm, tData, txQueue, qBlock} = app.state
   const R = tData[realm]
-
-  //current features 
-  let _f = R.features[id] === undefined ? Blank() : R.features[id]
+  //current feature
+  let local = R.features[id] === undefined ? {} : R.features[id]
+  const {f, delta} = R.deltas(R, qBlock, "features", id)
 
   //update payload with data information 
   const update = (e,key)=>{
     let _d = FeatureData[key]
     //update feature 
-    _f[key] = _d.input[4] == "number" ? Number(e.target.value) : e.target.value
-    R.features[id] = _f
-    console.log(_f)
+    local[key] = _d.input[4] == "number" ? Number(e.target.value) : e.target.value
+    R.features[id] = local
     //save 
     R.save()
-    //view 
-    app.setState({
-      view: "realm.features."+id
-    })
+    app.setView(vid)
+  }
+
+  //check if in queue 
+  const uid = R.id + ".f." + id
+  const inQueue = txQueue.map(q=>q.payload.slice(0, 3).join(".")).indexOf(uid)
+  //submit to queue 
+  const submitDeltas = ()=>{
+    let q = {
+      name: R.name,
+      what: "feature " + (id + 1),
+      cost: delta.length,
+      payload: [R.id, "f", id, ...delta]
+    }
+    const push = ()=>{
+      inQueue == -1 ? app.state.txQueue.push(q) : app.state.txQueue[inQueue] = q
+      app.setView(vid)
+    }
+    return html`<div class="b tc white dim mb1 pa1 br2 bg-green pointer" onClick=${push}>Submit Changes</div>`
   }
 
   //make an input based upon the data type 
   const makeDiv = {
     select(key, d) {
       return html`
-        <select class="mv1" value=${_f[key]} onChange=${(e)=>update(e, key)}>
+        <select class="mv1" value=${f[key].val} onChange=${(e)=>update(e, key)}>
           ${d[2].map((val,j)=>html`<option value=${j}>${val}</option>`)}
         </select>
         `
     },
     minmax(key, d) {
-      return html`<input type="number" min=${d[2][0]} max=${d[2][1]} value=${_f[key]} onInput=${(e)=>update(e, key)}></input>`
+      return html`<input type="number" min=${d[2][0]} max=${d[2][1]} value=${f[key].val} onInput=${(e)=>update(e, key)}></input>`
     }
   }
 
@@ -80,63 +94,30 @@ const EditFeature = (app,id)=>{
   <div class="ba ma1 ph2">
     <h3 class="ma0">Feature #${id + 1}</h3>
     <div class="flex flex-inline items-center justify-around">
-      ${Object.entries(FeatureData).map(([key,val])=>html`<div class="ma1"><span class="b mh1">${val.input[0]}</span>${makeDiv[val.input[1]](key, val.input)}</div>`)}
+      ${Object.entries(FeatureData).map(([key,val])=>html`
+        <div class="flex items-center ma1">
+          <span class="b mh1">${val.input[0]}</span>${makeDiv[val.input[1]](key, val.input)}
+          <div class="${f[key].color} br-100" style="width: 15px;height: 15px;"></div>
+        </div>`)}
     </div>
+    <div>${delta.length > 0 ? submitDeltas() : ""}</div>
   </div>`
-}
-
-const ShowFeature = (app,id)=>{
-  const html = app.html
-
-  //get state and realm 
-  const {realm, tData} = app.state
-  const R = tData[realm]
-  //current features 
-  let _f = R.features[id]
-  let _type = featureTypes[_f.t]
-
-  return html`<div>Feature #${id + 1} [${_f.x},${_f.y}] <span class="mh2">${_type}</span></div>`
 }
 
 const FeatureUI = (app)=>{
   const html = app.html
 
-  //get state and realm 
-  const {tokens, realm, tData, view} = app.state
-  const R = tData[realm]
-  //create array for loop 
-  const fids = Array.from({
-    length: R.attributes.features
-  }, (v,i)=>i);
-  //determine view and look for feature id 
-  const _view = view.split(".")
+  //declare sub pieces for larger component
+  const vid = "features"
+  const changes = (hasDelta)=>hasDelta ? html`<div class="bg-orange br-100 mh2" style="width: 15px;height: 15px;"></div>` : ""
+  const shortOwned = (f,hasDelta)=>html`<div class="flex"><span class="mh2">${featureTypes[f.t.val]}</span>[${f.x.val},${f.y.val}]${changes(hasDelta)}</div>`
+  const short = (f)=>html`<div><span class="mh2">${featureTypes[f.t]}</span>[${f.x},${f.y}]</div>`
+  const format = FeatureData
 
-  const updateView = (view)=>app.setState({
-    view
-  })
-
-  //show individual features 
-  let _feature = (id)=>{
-    //if owned give edit button
-    let owned = ()=>html`<div class="dim pa1 ba b--green pointer" onClick=${()=>updateView("realm.features." + id)}>Edit</div>`
-
-    //display edit if owned and selected   
-    if (tokens.includes(R.id) && id.toString() == _view[2]) {
-      return EditFeature(app, id)
-    } else {
-      if (R.features[id] === undefined) {
-        //if undefinded show nothing 
-        return html`<div class="flex items-center justify-between ma1 pa1 ph3 ba"><div>Feature #${id + 1} not set.</div>${tokens.includes(R.id) ? owned() : ""}</div>`
-      } else {
-        //show if defined 
-        return html`<div class="flex items-center justify-between ma1 pa1 ph3 ba">${ShowFeature(app, id)}${tokens.includes(R.id) ? owned() : ""}</div>`
-      }
-    }
-  }
-
-  return html`
-  <div class="mh2">${fids.map(_feature)}</div>
-  `
+  //call the view 
+  return app.views.realmFeature(app,{vid,format,short,shortOwned})
 }
 
-export {FeatureUI}
+export {FeatureUI, Blank as bFeature}
+
+//∆
