@@ -10,6 +10,10 @@ The goal of this project is to create the most interesting fantasy world that yo
 
 [Get a Realm now on Stargaze](https://www.stargaze.zone/launchpad/stars1avmaqtmxw9g43mgpxzuhv074gmzm5wharxrvlsfp4ze7246gyqdqtr9a0l)
 
+[You need an Ethereum Wallet and EVMOS to interact with your NFT](https://chainlist.org/?search=evmos) 
+
+[Get EVMOS on Osmosis](https://app.osmosis.zone/?from=OSMO&to=EVMOS)
+
 ## Usage
 If you own an NFT you may worldbuild (MODIFY) it. Your realm has a given number of People, Features, and Ruins. For each you can modify the following attributes.  
 - Features: type and position (x,y)
@@ -24,15 +28,13 @@ If you own an NFT you may worldbuild (MODIFY) it. Your realm has a given number 
 5.	Edit the attributes
 ![Example of Use](example-use.png)
 
-All changes made are saved automatically to the browser, **but only you can see them**. If you want everyone to see what you have made, you may submit your changes to the Stargaze blockchain (**it costs 1 $STAR for every change submitted**).  
+All changes made are saved automatically to the browser, **but only you can see them**. If you want everyone to see what you have made, you may submit your changes to the EVMOS blockchain (**it costs 0.1 $EVMOS for every change submitted**).  
 
 #### How Share Your Work
 1.	Select the item you want to submit
 2.	Click “Submit Changes” (you may batch submit multiple changes - just repeat steps 1&2)
 3.	Click on Queue (button in the top right)
-4.	A Kepler window will open to submit a send transaction.
-    1.	*It costs 1 $STAR for every change submitted*
-    2.	The memo field contains the change data – **DO NOT MODIFY THIS** 
+4.	An Ethereum Wallet window will open to submit a send transaction (*It costs 0.1 $EVMOS for every change submitted*).
 5.	Select Approve to submit the change transaction.
 
 ![Example of Submit](example-submit.png)
