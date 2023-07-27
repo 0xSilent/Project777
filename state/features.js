@@ -1,5 +1,0 @@
-const FEATURES = {
-  
-}
-
-export {FEATURES}
