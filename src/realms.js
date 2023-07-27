@@ -5,70 +5,78 @@ const DB = localforage.createInstance({
   name: "Realms:Fantasy",
 })
 
-import {FeatureUI, bFeature} from "./features.js"
-import {RuinUI, bRuin} from "./ruins.js"
-import {PeopleUI, bPeople} from "./people.js"
+import * as Features from "./features.js"
+import * as Ruins from "./ruins.js"
+import * as People from "./people.js"
+
+const Save = (vid,data) => {
+  if (vid == "features")
+    return Features.Save(data)
+  else if (vid == "ruins")
+    return Ruins.Save(data)
+  else if (vid == "people")
+    return People.Save(data)
+}
 
 const Blank = (vid)=>{
   if (vid == "features")
-    return bFeature()
+    return Features.Blank()
   else if (vid == "ruins")
-    return bRuin()
+    return Ruins.Blank()
   else if (vid == "people")
-    return bPeople()
+    return People.Blank()
 }
 
 //check differences - get most current state 
-const Deltas = (R,qBlock,vid,id)=>{
-  let blank = Blank(vid)
-  const current = Object.assign({}, blank)
-
+const Deltas = (R,vid,id)=>{
+  const blank = Blank(vid)
+  
   const states = {
     local: R[vid][id] === undefined ? {} : R[vid][id],
     state: R.state[vid][id] ? R.state[vid][id] : {},
+    random : R.random[vid][id],
     blank
   }
 
-  //check if submitted in block
-  const uid = [R.id, vid.charAt(0), id].join(".")
-  const q = qBlock.filter(q=>q.slice(0, 3).join(".") == uid)
-  states.queue = q[0] === undefined ? {} : Object.fromEntries(q[0].slice(3))
-
-  //provide most relevent state 
-  const color = ["bg-light-blue", "bg-light-green", "bg-green", ""]
   //query in this order
-  const order = ["local", "queue", "state", "blank"]
-  //track deltas 
-  const delta = []
-  const show = {}
+  const order = ["local", "state", "random","blank"]
+  let delta = false 
   //loop through what should be in feature 
-  Object.keys(current).forEach(k=>{
+  const what = Object.entries(blank).map(([k,val])=>{
     //find the highest order that has data 
     let o = order.filter(_o=>states[_o][k] !== undefined)
-    //push delta 
-    if (states.local[k] != states.state[k] && states.local[k] != states.queue[k]) {
-      delta.push([k, states.local[k]])
-    }
-
     const i = order.indexOf(o[0])
+    //check for deltas 
+    if(i == 0 && states.local[k] != states.state[k])
+      delta = true
+    else if(i > 1)
+      delta = true 
 
-    show[k] = states[o[0]][k]
-    current[k] = {
-      val: show[k],
+    return [k,{
+      val: states[o[0]][k],
       order: i,
-      color: color[i],
-      q: o.includes("queue")
-    }
+      color: i == 1 ? "bg-light-green" : "bg-light-blue",
+    }]
   }
   )
 
   return {
     i : id,
     view : vid,
-    what: current,
-    state : R.state[vid][id], 
+    what: Object.fromEntries(what),
     delta
   }
+}
+
+const GenRandom = (rid,what,n) => {
+  const seed = ["Realms777:Fantasy",rid,what].join(".")
+
+  if(what=="people")
+    return Array.from({length:n},(v,i)=>People.random({seed:seed+"."+i}))
+  else if(what=="features")
+    return Array.from({length:n},(v,i)=>Features.random({seed:seed+"."+i}))
+  if(what=="ruins")
+    return Array.from({length:n},(v,i)=>Ruins.random({seed:seed+"."+i}))
 }
 
 //main state for ruins 
@@ -88,8 +96,53 @@ const RealmState = async(R)=>{
     people: people || []
   })
 
+  //random 
+  R.random = {
+    people : GenRandom(id,"people",attr.people),
+    features : GenRandom(id,"features",attr.features),
+    ruins : GenRandom(id,"ruins",attr.ruins)
+  }
+
   //delta functions 
   R.deltas = Deltas
+
+  //get uid for submit to block 
+  R.uid = (what,i) => {
+    return what == "features" ? i : what == "people" ? attr.features + i : attr.features + attr.people + i
+  }
+
+  //need full count of values for state 
+  let n = [attr.features,attr.features+attr.people,attr.features+attr.people+attr.ruins]
+  // State handling 
+  R.state = {
+    features: [],
+    people: [],
+    ruins: []
+  }
+  
+  R._state.forEach((val,i) => {
+    if(i < n[0])
+      R.state.features.push(!val ? null : Features.Load(val))
+    else if(i < n[1])
+      R.state.people.push(!val ? null : People.Load(val))
+    else 
+      R.state.ruins.push(!val ? null : Ruins.Load(val))
+  })
+
+  //to blockhain 
+  R.toBlockchain = (q) => {
+    //loop through paylaod to set tx info 
+    let _nft, _what = [], _state = [];
+    q.forEach(([rid,what,id]) => {
+      _nft = Number(rid)
+      _what.push(R.uid(what,id))
+
+      //state data 
+      const sd = Save(what,Deltas(R,what,id).what)
+      _state.push(LZString.compressToUTF16(JSON.stringify(sd)))
+    })
+    return [_nft,_what,_state]
+  }
 
   //save local state 
   R.save = function() {
@@ -106,9 +159,9 @@ const SubView = (app)=>{
   const view = app.state.view.split(".")
 
   let subs = {
-    "features": FeatureUI,
-    "ruins": RuinUI,
-    "people": PeopleUI,
+    "features": Features.UI,
+    "ruins": Ruins.UI,
+    "people": People.UI,
   }
 
   if (view[1] === undefined || !subs[view[1]])
@@ -117,13 +170,14 @@ const SubView = (app)=>{
   return subs[view[1]](app)
 }
 
-const MapMarker = (app,R,owned,{i,what,view,state})=>{
+const MapMarker = (app,R,owned,{i,view,what})=>{
   //don't do markers that don't exist 
-  if(i >= R.attributes[view] || (!owned && !state)) 
+  if(i >= R.attributes[view]) 
     return ""
 
   //determine if there is a position 
-  let _p = [what.x.val, what.y.val]
+  const {x = {val:0}, y = {val:0}} = what
+  let _p = [x.val, y.val]
   if(_p.join("")=="00")
     return ""
   
@@ -151,10 +205,8 @@ const RealmUI = (app)=>{
   }
 
   //create array for loop 
-  const len = [R.attributes.features,R.attributes.people]
-  const ids = Array.from({
-      length: len[0] > len[1] ? len[0] : len[1]
-  }, (v,i)=>i);
+  const len = [R.attributes.features,R.attributes.ruins,R.attributes.people]
+  const ids = (i) => Array.from({length: len[i]}, (v,i)=>i)
 
   //div for all NFT features
   const indicator = (val)=>html`<div class="bg-green br-100" style="width: 15px;height: 15px;"></div>`
@@ -178,8 +230,8 @@ const RealmUI = (app)=>{
             <div>
               <div class="flex flex-wrap justify-center f4">${["Seed", "Latitude", "Temperature", "Precipitation"].map(adiv)}</div>
               <div class="flex justify-center f4">
-                ${button("People", "br--left br2")}
-                ${button("Features", "")}
+                ${button("Features", "br--left br2")}
+                ${button("People", "")}
                 ${button("Ruins", "br--right br2")}
               </div>
             </div>
@@ -188,7 +240,7 @@ const RealmUI = (app)=>{
           <div style="min-width: 800px;min-height: 800px;"> 
             <div class="absolute">
               <img id="map" src=${R.image} width="800" height="800"></img>
-              ${["features","ruins","people"].map(w => ids.map(i => MapMarker(app,R,owned,R.deltas(R, qBlock, w, i))))}
+              ${["features","ruins","people"].map((w,i) => ids(i).map(j => MapMarker(app,R,owned,R.deltas(R, w, j))))}
             </div>
           </div>
         </div>

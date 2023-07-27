@@ -3,6 +3,10 @@
 */
 
 /*
+  Chance RNG
+*/
+import "../lib/chance.min.js"
+/*
   Storage
 */
 //localforage
@@ -11,7 +15,7 @@ import "../lib/localforage.min.js"
 /*
   Blockchain
 */
-import {tokenData, submitChangeQueue, connect} from './blockchain.js';
+import {tokenData, submitEVMOSState, connect} from './blockchain.js';
 
 /*
   UI Resources  
@@ -58,16 +62,32 @@ const Views = {
     //get total cost - simplified to number of changes being made 
     const cost = queue.length
 
+    const byRealm = queue.reduce((bR,q,i)=>{
+      if (!bR[q.name])
+        bR[q.name] = {}
+
+      bR[q.name][i] = q
+      return bR
+    }
+    , {})
+
     return html`
         <div class="dropdown mh2">
-          <a class="f6 link dim ba bw1 pa1 dib black" href="#0" onClick=${()=>app.submitQueue()}>Queue [${queue.length} : ${cost} <img src="../stars.png" width="12" height="12"></img>]</a>
+          <a class="f6 link dim ba bw1 pa1 dib black" href="#0">Queue</a>
           <div class="dropdown-content">
-            <div class="dim pa2 pointer" onClick=${()=>app.submitQueue()}>Submit</div>
-            ${queue.map((q,i)=>{
+            ${Object.entries(byRealm).map(([key,R])=>{
       return html`
-              <div class="flex flex-inline items-center justify-between dim pa2 pointer" style="width: 275px;" onClick=${()=>rmQueue(i)}>
-                <div>${q.name} - ${q.what}</div>
-                <div>✘</div>
+              <div class="ba ma1">
+                <div class="flex flex-inline items-center justify-between pa2">
+                  <div>${key}</div>
+                  <div class="dim pointer" onClick=${()=>app.submitQueue(key)}>[Submit ${Object.keys(R).length} <img src="../stars.png" width="12" height="12"></img>]</div>
+                </div>
+                ${Object.entries(R).map(([i,q])=>html`
+                  <div class="flex flex-inline items-center justify-between pa2 ml2" style="width: 325px;">
+                    <div>${q.what}</div>
+                    <div class="dim pointer" onClick=${()=>rmQueue(Number(i))}>[✘]</div>
+                  </div>
+                `)}
               </div>`
     }
     )}
@@ -103,20 +123,20 @@ const Views = {
       //display edit if owned and selected   
       if (tokens.includes(R.id)) {
         //current feature
-        const {what, delta} = R.deltas(R, qBlock, vid, id)
+        const {what, delta} = R.deltas(R, vid, id)
 
         //show owned data 
         const sub = html`
       <div class="flex justify-between items-center">
         <div class="b">#${id + 1}</div>
-        <div>${shortOwned(what, delta.length != 0)}</div>
+        <div>${shortOwned(what, delta)}</div>
         <div class="dim pa1 ba b--green pointer" onClick=${()=>app.setView(_vid + id)}>Edit</div>
       </div>`
 
         return id.toString() == _view[2] ? this.editFeature(app, R, vid, id, format) : baseDiv(sub)
       } else {
         //state only 
-        const what = R.state[vid][id]
+        const what = R.state[vid][id] || R.random[vid][id]
         //if undefinded vs data 
         return baseDiv(html`<div class="flex justify-between items-center"><div class="f4 b">#${id + 1}</div> ${!what ? `NOT SET` : short(what)}</div>`)
       }
@@ -126,30 +146,60 @@ const Views = {
   },
   editFeature(app, R, _what, id, format) {
     //universal editor for features/ruins/peoples 
-    const _vid = ["realm",_what,id].join(".")
+    const _vid = ["realm", _what, id].join(".")
     const local = R[_what][id] || {}
-    const {what, delta} = R.deltas(R, app.state.qBlock, _what, id)
-    
-    //update payload with data information 
-    const update = (e,key)=>{
-      //update feature 
-      local[key] = format[key].input[4] == "number" ? Number(e.target.value) : e.target.value
+    const {what, delta} = R.deltas(R, _what, id)
+
+    //to bue sued by multiple calls to update state 
+    const _update = (key,val,i=-1)=>{
+      //establish array if it doesn't exist 
+      if (i != -1 && !local[key]) {
+        //set to random values first 
+        local[key] = R.random[_what][id][key].slice()
+      }
+      //set value 
+      if (i != -1) {
+        local[key][i] = val
+      } else {
+        local[key] = val
+      }
+
+      //save local 
       R[_what][id] = local
       //save 
       R.save()
       app.setView(_vid)
     }
 
+    //generate a new random value 
+    const newRandom = (key,data,i=-1)=>{
+      const random = data[0]
+      const obj = {}
+      //create object to send to random generator
+      data.slice(1).forEach(([_id,_key])=>{
+        obj[_id] = format[_key][1] == "select" ? format[_key][2][what[_key].val] : what[_key].val
+      }
+      )
+
+      const nVal = key == "sites" ? random(obj) : random(obj)[key]
+      _update(key, nVal, i)
+    }
+
+    //update payload with data information 
+    const update = (e,key)=>{
+      const val = format[key][4] == "number" ? Number(e.target.value) : e.target.value
+      _update(key, val)
+    }
+
     //check if in queue 
-    const uid = [R.id,_what.charAt(0).toLowerCase(),id]
-    const inQueue = app.state.txQueue.map(q=>q.payload.slice(0, 3).join(".")).indexOf(uid.join("."))
+    const uid = [R.id, _what, id]
+    const inQueue = app.state.txQueue.map(q=>q.uid.join(".")).indexOf(uid.join("."))
     //submit to queue 
     const submitDeltas = ()=>{
       let q = {
         name: R.name,
         what: _what + " " + (id + 1),
-        cost: delta.length,
-        payload: [...uid, ...delta]
+        uid
       }
       const push = ()=>{
         inQueue == -1 ? app.state.txQueue.push(q) : app.state.txQueue[inQueue] = q
@@ -160,6 +210,35 @@ const Views = {
 
     //make an input based upon the data type 
     const makeDiv = {
+      arr(key, d) {
+        //get array info 
+        const [base,nKey,div] = d[1].split(".")
+        const n = what[nKey].val
+
+        return html`<div>${Array.from({
+          length: n
+        }, (v,i)=>i).map(_i=>makeDiv[div](key, d, _i))}</div>`
+      },
+      seed(key, d, i=-1) {
+        //pull value to randomly set and pull linked data 
+        const val = i != -1 ? what[key].val[i] : what[key].val
+        const linkUI = d[5]
+
+        return html`
+        <div class="flex items-center justify-between">
+          ${linkUI(html, val)}
+          <div class="b tc white dim pa1 ph3 br2 bg-green pointer" onClick=${()=>newRandom(key, d[2], i)}>↻</div>
+        </div>
+        `
+      },
+      random(key, d, i=-1) {
+        const val = i != -1 ? what[key].val[i] : what[key].val
+        return html`
+        <div class="flex items-center mh1">
+          <div class="mh2">${val || "null"}</div>
+          <div class="b tc white dim mb1 pa1 ph3 br2 bg-green pointer" onClick=${()=>newRandom(key, d[2], i)}>↻</div>
+        </div>`
+      },
       select(key, d) {
         return html`
         <select class="mv1" value=${what[key].val} onChange=${(e)=>update(e, key)}>
@@ -177,13 +256,20 @@ const Views = {
   <div class="ba ma1 ph2">
     <h3 class="ma0">#${id + 1}</h3>
     <div class="flex flex-wrap items-center justify-around">
-      ${Object.entries(format).map(([key,val])=>html`
+      ${Object.entries(format).map(([key,val])=>{
+      const div = val[1].split(".")[0]
+      if (div == "disabled")
+        return
+
+      return html`
         <div class="flex items-center ma1">
-          <span class="b mh1">${val.input[0]}</span>${makeDiv[val.input[1]](key, val.input)}
+          <span class="b mh1">${val[0]}</span>${makeDiv[val[1].split(".")[0]](key, val)}
           <div class="${what[key].color} br-100" style="width: 15px;height: 15px;"></div>
-        </div>`)}
+        </div>`
+    }
+    )}
     </div>
-    <div>${delta.length > 0 ? submitDeltas() : ""}</div>
+    <div>${delta ? submitDeltas() : ""}</div>
   </div>`
   },
   isNew(app) {
@@ -229,6 +315,8 @@ class App extends Component {
       realm: 1,
       viewRealm: 1,
       testnet: false,
+      chain: -1,
+      balance: 0,
       jsonQueue: [],
       txQueue: [],
       qBlock: []
@@ -237,6 +325,7 @@ class App extends Component {
     //use in other views 
     this.html = html
     this.views = Views
+
   }
 
   // Lifecycle: Called whenever our component is created
@@ -246,7 +335,7 @@ class App extends Component {
     if (lastLoad === null) {
       this.showDialog("isNew")
     }
-    this.save("lastLoad", Date.now())
+    localStorage.setItem("lastLoad", Date.now())
 
     //find out if searching for a particular realm 
     const url = new URL(window.location.href);
@@ -259,24 +348,6 @@ class App extends Component {
 
   // Lifecycle: Called just before our component will be destroyed
   componentWillUnmount() {}
-
-  //save local state 
-  async save(key, what, where="browser") {
-    if (where == "browser") {
-      localStorage.setItem(key, what)
-    } else if (where == "storage") {
-      DB.setItem(key, what)
-    }
-  }
-
-  //load local state 
-  async load(key, where="browser") {
-    if (where == "browser") {
-      return localStorage.getItem(key)
-    } else if (where == "storage") {
-      return await DB.getItem(key)
-    }
-  }
 
   //show the dialog calling which dialog to show 
   showDialog(what) {
@@ -292,25 +363,60 @@ class App extends Component {
   }
 
   //set Stargaze network 
-  async setNetwork(isMain=true) {
+  async setNetwork() {
     this.setState({
-      testnet: !isMain,
       tData: {},
       tokens: [],
       view: "main"
     })
 
-    connect(this, isMain)
+    await connect(this)
+  }
+
+  async setEVMOS() {
+    try {
+      await window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{
+          chainId: '0x2329'
+        }],
+      });
+
+      this.setNetwork()
+    } catch (switchError) {
+      // This error code indicates that the chain has not been added to MetaMask.
+      if (switchError.code === 4902) {// Do something
+      }
+    }
   }
 
   //submit queue for transaction 
-  submitQueue() {
-    let queue = this.state.txQueue
-    //get total cost 
-    const cost = queue.length
-    //get payload 
-    const payload = queue.map(q=>q.payload)
-    submitChangeQueue(this, cost, payload)
+  async submitQueue(key) {
+    const {txQueue, realm, tData} = this.state
+
+    //pull data from queue 
+    const sent = []
+      , q = [];
+    txQueue.forEach((_q,i)=>{
+      if (_q.name == key) {
+        q.push(_q.uid)
+        sent.push(i)
+      }
+    }
+    )
+
+    //format data 
+    let data = tData[realm].toBlockchain(q)
+    const tx = await submitEVMOSState(this, data)
+    console.log(tx)
+    //remove from q 
+    sent.forEach(_i=>{
+      txQueue.splice(_i, 1)
+    }
+    )
+    this.setState({
+      txQueue
+    })
   }
 
   //load a token 
@@ -355,7 +461,7 @@ class App extends Component {
   }
 
   //main page render 
-  render(props, {account, view, tokens, txQueue, showDialog, testnet, viewRealm}) {
+  render(props, {account, chain, balance, view, tokens, txQueue, showDialog, viewRealm}) {
     const sortAdr = account.length > 0 ? account.slice(0, 5) + "..." + account.slice(-4) : "Connect"
 
     //get view as array 
@@ -369,6 +475,15 @@ class App extends Component {
       </span>`
     }
 
+    const connect = ()=>{
+      if (chain == 9001 && balance > 0.11 && tokens.length > 0)
+        return
+
+      const lowBalance = html`<div class="br2 bg-yellow pointer tc ma1 pa1"><a href="https://app.osmosis.zone/?from=OSMO&to=EVMOS" target="_blank">Get EVMOS on Osmosis.</a></div>`
+      const notConnect = html`<div class="br2 bg-red pointer dim white b tc ma1 pa1" onClick=${()=>this.setEVMOS()}>Please connect to EVMOS.</div>`
+      return chain != 9001 ? notConnect : balance < 0.11 ? lowBalance : ""
+    }
+
     return html`
       <div>
         <div class="relative flex items-center justify-between ph3 z-2">
@@ -376,21 +491,19 @@ class App extends Component {
             <h1 class="mv2"><a class="link underline-hover black" href=".">Project 777</a></h1>
             <div>
               <span class="b">View #</span>
-              <input class="tc" type="number" min="1" max=${testnet ? 3 : 777} value=${viewRealm} onInput=${(e)=>viewRealm = Number(e.target.value)}></input>
+              <input class="tc" type="number" min="1" max="777" value=${viewRealm} onInput=${(e)=>viewRealm = Number(e.target.value)}></input>
               <a class="f6 link dim br2 br--right bw1 pa1 dib white bg-dark-green" href="#" onClick=${()=>this.setRealm(viewRealm)}>View</a>
               ${tokens.length > 0 ? myTokens() : ""}
             </div>
           </div>
-          <div class="flex items-center">
-            ${txQueue.length > 0 ? Views.txQueue(this) : ""}
-            <a class="f5 link dim ba bw1 pa1 dib black" href="https://www.stargaze.zone/launchpad/stars1avmaqtmxw9g43mgpxzuhv074gmzm5wharxrvlsfp4ze7246gyqdqtr9a0l">Get A Realm</a>
-            <div class="dropdown ml2">
-              <a class="f5 link dim ba bw1 pa1 dib black" href="#" onClick=${()=>this.setNetwork()}>${sortAdr}</a>
-              <div class="dropdown-content">
-                <a href="#" onClick=${()=>this.setNetwork(false)}>Testnet</a>
-              </div>
+          <div>
+            <div class="flex items-center">
+              ${txQueue.length > 0 ? Views.txQueue(this) : ""}
+              <a class="f5 link dim ba bw1 pa1 dib black mh1" href="https://www.stargaze.zone/launchpad/stars1avmaqtmxw9g43mgpxzuhv074gmzm5wharxrvlsfp4ze7246gyqdqtr9a0l">Get A Realm</a>
+              <a class="f5 link dim ba bw1 pa1 dib black mh1" href="#" onClick=${()=>this.setNetwork()}>${sortAdr}</a>
+              <a class="f5 link dim ba bw1 pa1 dib black mh1" href="#" onClick=${()=>this.showDialog("isNew")}>About</a>
             </div>
-            <a class="ml2 f5 link dim ba bw1 pa1 dib black" href="#" onClick=${()=>this.showDialog("isNew")}>About</a>
+            ${chain > -1 ? connect() : ""}
           </div>
         </div>
         <div class="flex justify-center w-100 z-0">
@@ -403,3 +516,4 @@ class App extends Component {
 }
 
 render(html`<${App}/>`, document.body);
+

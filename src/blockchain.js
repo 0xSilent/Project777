@@ -1,3 +1,12 @@
+import {NFTState} from "./abi.js";
+import {ethers} from "../lib/ethers-5.7.esm.min.js";
+const EVMOSView = new ethers.providers.JsonRpcProvider("https://evmos-json-rpc.stakely.io");
+let EVMOSSigner;
+// evmos deploy 
+const Contracts = {
+  "NFTState" : new ethers.Contract("0x6bE37751e38FD34638749eC3c5a69F1B1F4377C9", NFTState, EVMOSView)
+}
+
 /*
   Handle JSON queries 
 */
@@ -38,8 +47,8 @@ const lastState = "https://nftstorage.link/ipfs/bafybeid7urfh623nyp343whxb6pm5zn
 const getTxToOrFrom = async(address,ToOrFrom="from")=>{
   const search = await client.searchTx({
     sentFromOrTo: address
-  },{
-    minHeight : 9179451,
+  }, {
+    minHeight: 9179451,
   })
   let res = []
 
@@ -62,7 +71,7 @@ const getTxToOrFrom = async(address,ToOrFrom="from")=>{
     })
     //check for amt and address and recipient is 777 
     if (amount == 0 || address != (ToOrFrom == "from" ? sender : recipient) || recipient != dev777)
-      return;  
+      return;
 
     //decode raw tx
     const decoded = Tx.decode(tx)
@@ -80,65 +89,20 @@ const getTxToOrFrom = async(address,ToOrFrom="from")=>{
   }
   )
 
-  return res 
+  return res
 }
 
-const submitChangeQueue = (app,cost,payload)=>{
-  //777 dev 
-  let recipient = dev777;
-
-  let amount = parseFloat(cost);
-  if (isNaN(amount)) {
-    alert("Invalid amount");
-    return false;
+const submitEVMOSState = async (app,data)=>{
+  //base cost 
+  const base = await Contracts.NFTState.cost()
+  const overrides = {
+    value : base
   }
 
-  amount *= 1000000;
-  amount = Math.floor(amount);
-
-  //payload 
-  const memo = JSON.stringify(payload);
-
-  (async()=>{
-    //get account and signer 
-    await window.keplr.enable(chainId);
-    const offlineSigner = window.keplr.getOfflineSigner(chainId);
-    const accounts = await offlineSigner.getAccounts();
-
-    //set client 
-    const client = await SigningStargateClient.connectWithSigner("https://rpc.stargaze-apis.com/", offlineSigner);
-
-    //get cost and fee 
-    const amountFinal = {
-      denom: "ustars",
-      amount: amount.toString(),
-    };
-    const fee = {
-      amount: [{
-        denom: "ustars",
-        amount: "5000",
-      }, ],
-      gas: "200000",
-    };
-
-    //send 
-    client.sendTokens(accounts[0].address, recipient, [amountFinal], fee, memo).then(res=>{
-      console.log(res)
-      //cleare queue 
-      app.setState({txQueue:[]})
-    }
-    ).catch(res=>{
-      console.log("Rejected")
-    }
-    )
-
-    //assertIsBroadcastTxSuccess(result);
-  }
-  )();
-
-  return false;
+  //submit tx 
+  return await Contracts.NFTState.connect(EVMOSSigner).setState(...data,overrides)
 }
-;
+
 
 /*
   Query Data
@@ -164,7 +128,6 @@ const NFT = {
   json: ["https://bafybeid2k2e5qn3rydmaa4af3n5iqbtfm4iosfe35hddcvviw5sujsrl2m.ipfs.nftstorage.link/", "https://nftstorage.link/ipfs/bafybeidi5sdbptoo7ltq3zxqg3rkqzyqzful6rzsmnfmlw7mpm43y6kw34/"]
 }
 
-
 /*
   Pull token data from IPFS state 
 */
@@ -174,21 +137,50 @@ const tokenData = async(id,isMain)=>{
   let data = await getJSON(NFT.json[idx] + id)
   data.image = NFT.img[idx] + id + ".jpeg"
 
-  const attributes = Object.fromEntries(data.attributes.map(a=>[a.trait_type, a.value]))
-  data.attributes = attributes
+  const attr = Object.fromEntries(data.attributes.map(a=>[a.trait_type, a.value]))
+  data.attributes = attr
 
-  //state 
-  let {features, ruins, people} = await getJSON(lastState + id + ".json") || {}
-  data.state = {
-    features: features || [],
-    ruins: ruins || [],
-    people: people || []
-  }
+  //need full count of values for state 
+  let n = attr.features+attr.people+attr.ruins
+  //pull state from evmos
+  const _state = await Contracts.NFTState.getState(Number(id),Array.from({length:n},(v,i)=>i))
+  data._state = _state.map(val => {
+    const d = LZString.decompressFromUTF16(val)
+    return d ? JSON.parse(d) : null
+  })
 
   return data
 }
 
+const EVMOSConnect = async(app)=>{ 
+  // A Web3Provider wraps a standard Web3 provider, which is
+  // what MetaMask injects as window.ethereum into each page
+  const provider = new ethers.providers.Web3Provider(window.ethereum)
+
+  // MetaMask requires requesting permission to connect users accounts
+  await provider.send("eth_requestAccounts", []);
+
+  // The MetaMask plugin also allows signing transactions to
+  // send ether and pay to change state within the blockchain.
+  // For this, you need the account signer...
+  const signer = EVMOSSigner = provider.getSigner()
+  const address = await signer.getAddress()
+
+  const chain = await signer.getChainId()
+  const balance = ethers.utils.formatEther(await signer.getBalance())
+  app.setState({chain,balance})
+
+  //set for change 
+  window.ethereum.on('accountsChanged', function (accounts) {
+    // Time to reload your interface with accounts[0]!
+    EVMOSConnect(app)
+  })
+}
+
 const connect = async(app,isMain=true)=>{
+  //connect with evmos via metamask 
+  EVMOSConnect(app)
+  
   const main = "https://rpc.stargaze-apis.com/"
   const test = "https://rpc.elgafar-1.stargaze-apis.com"
   //connect to Stargaze 
@@ -223,4 +215,4 @@ const connect = async(app,isMain=true)=>{
   tokens.tokens.forEach(async id=>app.loadToken(id))
 }
 
-export {tokenData, submitChangeQueue, connect}
+export {tokenData, submitEVMOSState, connect}
