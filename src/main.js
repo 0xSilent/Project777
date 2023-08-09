@@ -123,20 +123,20 @@ const Views = {
       //display edit if owned and selected   
       if (tokens.includes(R.id)) {
         //current feature
-        const {what, delta} = R.deltas(R, vid, id)
+        const {what, delta, isBlank} = R.deltas(R, vid, id)
 
         //show owned data 
         const sub = html`
       <div class="flex justify-between items-center">
         <div class="b">#${id + 1}</div>
-        <div>${shortOwned(what, delta)}</div>
+        <div>${isBlank ? "NOT SET" : shortOwned(what, delta)}</div>
         <div class="dim pa1 ba b--green pointer" onClick=${()=>app.setView(_vid + id)}>Edit</div>
       </div>`
 
         return id.toString() == _view[2] ? this.editFeature(app, R, vid, id, format) : baseDiv(sub)
       } else {
         //state only 
-        const what = R.state[vid][id] || R.random[vid][id]
+        const what = R.state[vid][id] 
         //if undefinded vs data 
         return baseDiv(html`<div class="flex justify-between items-center"><div class="f4 b">#${id + 1}</div> ${!what ? `NOT SET` : short(what)}</div>`)
       }

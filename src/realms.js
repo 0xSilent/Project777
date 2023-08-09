@@ -39,21 +39,29 @@ const Deltas = (R,vid,id)=>{
   }
 
   //query in this order
-  const order = ["local", "state", "random","blank"]
+  const order = ["local", "state", "blank"]
   let delta = false 
+  let isBlank = true
   //loop through what should be in feature 
-  const what = Object.entries(blank).map(([k,val])=>{
+  const what = Object.keys(blank).map(k =>{
     //find the highest order that has data 
     let o = order.filter(_o=>states[_o][k] !== undefined)
     const i = order.indexOf(o[0])
+    //blank 
+    if(i != 2){
+      isBlank = false
+    }
     //check for deltas 
-    if(i == 0 && states.local[k] != states.state[k])
+    if(i == 0 && JSON.stringify(states.local[k]) != JSON.stringify(states.state[k]))
       delta = true
     else if(i > 1)
       delta = true 
 
+    // make sure blank is filled 
+    let val = i == -1 ? states.random[k]: states[o[0]][k]
+    
     return [k,{
-      val: states[o[0]][k],
+      val,
       order: i,
       color: i == 1 ? "bg-light-green" : "bg-light-blue",
     }]
@@ -64,6 +72,7 @@ const Deltas = (R,vid,id)=>{
     i : id,
     view : vid,
     what: Object.fromEntries(what),
+    isBlank,
     delta
   }
 }
